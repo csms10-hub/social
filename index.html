@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>리모컨 지리정보 탐험</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0f172a; --panel:#111c33; --panel2:#18264a; --line:#26365f;
+  --text:#e8eefc; --muted:#93a3c8; --accent:#38bdf8; --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444;
+  --lamp:#ffd43b;
+  --z1:#ef4444; --z2:#f59e0b; --z3:#22c55e; --z4:#3b82f6; --z5:#a855f7;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:'Noto Sans KR',system-ui,sans-serif}
+header{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+header h1{font-size:18px;margin:0 8px 0 0;white-space:nowrap}
+.status{display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;background:var(--panel2);font-size:13px}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--bad);box-shadow:0 0 8px var(--bad)}
+.dot.ok{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+.dot.warn{background:var(--warn);box-shadow:0 0 8px var(--warn)}
+button,select{font-family:inherit;font-size:14px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--text);padding:7px 12px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);color:#04223a;border:none;font-weight:700}
+button.danger{background:var(--bad);border:none;color:#fff}
+.spacer{flex:1}
+label.chk{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:4px;cursor:pointer}
+main{display:grid;grid-template-columns:1fr 360px;height:calc(100% - 58px)}
+#map{height:100%;width:100%;background:#1e293b}
+aside{overflow-y:auto;background:var(--panel);border-left:1px solid var(--line);padding:12px;display:flex;flex-direction:column;gap:12px}
+.card{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px}
+.card h2{font-size:14px;margin:0 0 10px;color:var(--accent)}
+.zones{display:flex;flex-direction:column;gap:6px}
+.zone{display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;background:rgba(255,255,255,.03);border:1px solid transparent;cursor:pointer}
+.zone.active{border-color:var(--accent);background:rgba(56,189,248,.12)}
+.znum{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-weight:700;color:#fff;flex:none}
+.zname{flex:1;font-size:14px}
+.zlamp{font-size:12px;padding:3px 8px;border-radius:999px;background:#333c55;color:var(--muted)}
+.zlamp.on{background:var(--lamp);color:#3b2f00;font-weight:700}
+.remote{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.remote button{padding:10px 0;font-weight:700}
+.remote button.flash{background:var(--accent);color:#04223a}
+.remote .wide{grid-column:span 3}
+#log{height:140px;overflow-y:auto;font-family:ui-monospace,Consolas,monospace;font-size:12px;background:#0a1224;border-radius:8px;padding:8px;color:#a5b4d6}
+#log .rx{color:#7dd3fc}#log .err{color:#fca5a5}#log .act{color:#86efac}
+.row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+.small{font-size:12px;color:var(--muted);line-height:1.5}
+table.map{width:100%;border-collapse:collapse;font-size:12px}
+table.map td{padding:3px 4px;border-bottom:1px solid var(--line)}
+table.map td:last-child{text-align:right;font-family:ui-monospace,Consolas,monospace;color:var(--accent)}
+#toast{position:fixed;left:50%;top:76px;transform:translateX(-50%);background:rgba(15,23,42,.92);border:1px solid var(--accent);color:#fff;padding:10px 22px;border-radius:999px;font-size:18px;font-weight:700;z-index:2000;opacity:0;transition:opacity .25s;pointer-events:none}
+#toast.show{opacity:1}
+/* 가로등 */
+.lamp-wrap{position:relative;width:22px;height:22px}
+.lamp{position:absolute;left:5px;top:5px;width:12px;height:12px;border-radius:50%;background:#4b5563;border:2px solid #1f2937;transition:all .3s}
+.lamp-wrap.on .lamp{background:var(--lamp);border-color:#fff7cc;box-shadow:0 0 10px 4px rgba(255,212,59,.9),0 0 28px 12px rgba(255,212,59,.45)}
+.night .leaflet-tile-pane{filter:brightness(.45) saturate(.6) hue-rotate(200deg)}
+.zone-label{background:rgba(15,23,42,.85);color:#fff;border:none;border-radius:6px;font-weight:700;font-family:'Noto Sans KR',sans-serif;box-shadow:none}
+.zone-label::before{display:none}
+/* 모달 */
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:3000;padding:16px}
+#modal.show{display:flex}
+#modal .box{background:var(--panel);border:1px solid var(--line);border-radius:14px;width:min(900px,100%);max-height:90vh;display:flex;flex-direction:column}
+#modal .head{display:flex;gap:8px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}
+#modal .head h3{margin:0;flex:1;font-size:16px}
+#modal .body{overflow:auto;padding:16px}
+#modal pre{background:#0a1224;padding:12px;border-radius:8px;font-size:12.5px;line-height:1.5;overflow:auto;color:#d6e2ff}
+.guide li{margin-bottom:6px;font-size:14px;line-height:1.6}
+.wiring{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
+.wiring div{background:var(--panel2);border-radius:8px;padding:10px;text-align:center;font-size:13px}
+.wiring b{display:block;font-size:16px;color:var(--accent)}
+/* 중앙관제 */
+#mapWrap{position:relative;height:100%;min-height:0}
+.cctv{font-size:16px;line-height:20px;text-align:center;filter:drop-shadow(0 0 2px #000)}
+.acc{position:relative;width:30px;height:30px;display:grid;place-items:center;font-size:18px}
+.acc::before{content:'';position:absolute;inset:0;border-radius:50%;background:rgba(239,68,68,.35);border:2px solid #ef4444;animation:ring 1.2s infinite}
+.acc.sight::before{background:rgba(168,85,247,.3);border-color:#a855f7}
+.sus{font-size:22px;filter:drop-shadow(0 0 6px #ef4444)}
+@keyframes ring{from{transform:scale(.6);opacity:1}to{transform:scale(1.8);opacity:0}}
+#crosshair{position:absolute;left:50%;top:50%;width:140px;height:140px;margin:-70px 0 0 -70px;border:2px dashed rgba(56,189,248,.9);border-radius:50%;pointer-events:none;z-index:500;display:none}
+#crosshair::after{content:'';position:absolute;left:50%;top:50%;width:10px;height:10px;margin:-5px;background:var(--accent);border-radius:50%}
+#crosshair.show{display:block}
+.hud{position:absolute;left:12px;bottom:12px;right:12px;max-width:620px;z-index:600;background:rgba(15,23,42,.9);border:1px solid #a855f7;border-radius:10px;padding:8px 12px;font-size:13px;line-height:1.6;display:none}
+.hud.show{display:block}
+.legend{position:absolute;right:10px;bottom:26px;z-index:600;background:rgba(15,23,42,.88);border-radius:8px;padding:5px 10px;font-size:12px;display:none}
+.legend.show{display:block}
+.events{max-height:200px;overflow:auto;display:flex;flex-direction:column;gap:4px}
+.ev{font-size:12.5px;padding:6px 8px;border-radius:6px;background:rgba(255,255,255,.04);cursor:pointer;border-left:3px solid var(--bad);line-height:1.45}
+.ev.sight{border-left-color:#a855f7}.ev.info{border-left-color:var(--accent);cursor:default}.ev.done{opacity:.45;border-left-color:var(--ok)}
+.stats{display:flex;gap:6px;margin:8px 0}
+.stats div{flex:1;background:rgba(255,255,255,.04);border-radius:8px;padding:6px;text-align:center;font-size:12px;color:var(--muted)}
+.stats b{display:block;font-size:18px;color:var(--text)}
+.car-icon{background:none;border:none}
+.car{width:20px;height:20px;display:grid;place-items:center;transform-origin:50% 50%}
+.car svg{display:block;filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.6))}
+.car.jam svg{filter:drop-shadow(0 0 3px #ff1f1f) drop-shadow(0 0 1px #ff1f1f)}
+.car.sus svg{animation:siren .5s infinite alternate}
+@keyframes siren{from{filter:drop-shadow(0 0 5px #ff2a2a) drop-shadow(0 0 2px #ff2a2a)}to{filter:drop-shadow(0 0 5px #3b82f6) drop-shadow(0 0 2px #3b82f6)}}
+@media (max-width:900px){
+  main{grid-template-columns:1fr;grid-template-rows:55vh auto;height:auto}
+  aside{border-left:none;border-top:1px solid var(--line)}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>📡 리모컨 지리정보 탐험</h1>
+  <div class="status"><span class="dot" id="statusDot"></span><span id="statusText">연결 안 됨</span></div>
+  <button class="primary" id="btnConnect">🔌 오렌지보드 연결</button>
+  <button id="btnDisconnect" style="display:none">연결 해제</button>
+  <label class="chk"><input type="checkbox" id="chkAuto" checked>자동 재연결</label>
+  <div class="spacer"></div>
+  <select id="selLayer" title="지도 종류">
+    <option value="google">Google 지도</option>
+    <option value="googleSat">Google 위성</option>
+    <option value="osm">OpenStreetMap</option>
+  </select>
+  <label class="chk"><input type="checkbox" id="chkTraffic">🚦 실시간 교통</label>
+  <label class="chk"><input type="checkbox" id="chkNight">🌙 밤 모드</label>
+  <button id="btnCode">🧩 아두이노 코드 / 연결 방법</button>
+</header>
+
+<main>
+  <div id="mapWrap">
+    <div id="map"></div>
+    <div id="crosshair"></div>
+    <div class="hud" id="hud"></div>
+    <div class="legend" id="trafficLegend">🚦 실시간 교통 <span style="color:#22c55e">■</span> 원활 <span style="color:#f59e0b">■</span> 서행 <span style="color:#ef4444">■</span> 정체</div>
+  </div>
+  <aside>
+    <div class="card">
+      <h2>🗺️ 구역 (리모컨 숫자 1~5)</h2>
+      <div class="zones" id="zoneList"></div>
+    </div>
+
+    <div class="card">
+      <h2>🚨 중앙관제 상황판 (모의 훈련)</h2>
+      <div class="row"><button class="primary" id="btnOps">🛰️ 관제 시작</button><button id="btnMission">🚔 도주차량 훈련</button></div>
+      <div class="stats"><div>점수<b id="stScore">0</b></div><div>사고 처리<b id="stAcc">0</b></div><div>검거<b id="stCatch">0</b></div></div>
+      <div class="events" id="evList"><div class="small">관제를 시작하면 상황이 여기에 표시돼요. 항목을 누르면 그 위치로 이동합니다.</div></div>
+      <p class="small">6 최근 상황으로 이동 · 7 출동(화면 가운데 원 안의 사고 처리 / 용의 차량 검거) · 8 도주차량 훈련<br>가로등을 켠 구역은 CCTV가 더 멀리 봐요. 차량·사고·용의자는 모두 가상 상황입니다.</p>
+    </div>
+
+    <div class="card">
+      <h2>🎮 화면 리모컨 (키보드로도 가능)</h2>
+      <div class="remote">
+        <button data-act="Z1">1</button><button data-act="Z2">2</button><button data-act="Z3">3</button>
+        <button data-act="Z4">4</button><button data-act="Z5">5</button><button data-act="HOME">전체</button>
+        <button data-act="ZOOM_OUT">－</button><button data-act="UP">▲</button><button data-act="ZOOM_IN">＋</button>
+        <button data-act="LEFT">◀</button><button data-act="LIGHT">💡</button><button data-act="RIGHT">▶</button>
+        <span></span><button data-act="DOWN">▼</button><span></span>
+        <button class="wide" data-act="ALL_LIGHT">💡 전체 가로등 켜기/끄기</button>
+        <button data-act="ALERT_GO">🚨 상황</button><button data-act="DISPATCH">🚓 출동</button><button data-act="MISSION">🚔 훈련</button>
+      </div>
+      <p class="small">키보드: 1~5 구역 · 방향키 이동 · L/스페이스 가로등 · A 전체 가로등 · +/- 확대축소 · 0 전체보기 · 6 상황 · 7/Enter 출동 · 8 훈련</p>
+    </div>
+
+    <div class="card">
+      <h2>⚙️ 리모컨 설정</h2>
+      <div class="row">
+        <select id="selRemote" style="flex:1">
+          <option value="17">17키 리모컨 (화살표·OK 있음)</option>
+          <option value="21">21키 리모컨 (CH·VOL·EQ 있음)</option>
+        </select>
+      </div>
+      <div class="row">
+        <select id="selLearn" style="flex:1"></select>
+        <button id="btnLearn">버튼 학습</button>
+      </div>
+      <div class="row"><button id="btnResetMap">기본값으로</button><span class="small" id="learnMsg"></span></div>
+      <table class="map" id="mapTable"></table>
+    </div>
+
+    <div class="card">
+      <h2>📍 구역 위치 바꾸기</h2>
+      <div class="row">
+        <select id="selZoneEdit"></select>
+        <button id="btnSaveZone">지금 지도 중심을 이 구역으로</button>
+      </div>
+      <div class="row"><button id="btnResetZones">구역 기본값(창원 5개 구)</button></div>
+    </div>
+
+    <div class="card">
+      <h2>📜 수신 기록</h2>
+      <div id="log"></div>
+    </div>
+  </aside>
+</main>
+
+<div id="toast"></div>
+
+<div id="modal">
+  <div class="box">
+    <div class="head">
+      <h3>🧩 오렌지보드 연결 방법 & 아두이노 코드</h3>
+      <button id="btnCopy">코드 복사</button>
+      <button id="btnDownload">.ino 다운로드</button>
+      <button id="btnClose">닫기</button>
+    </div>
+    <div class="body">
+      <div class="wiring">
+        <div>IR 센서 <b>S (OUT)</b>→ 오렌지보드 D3</div>
+        <div>IR 센서 <b>VCC (+)</b>→ 5V</div>
+        <div>IR 센서 <b>GND (−)</b>→ GND</div>
+      </div>
+      <p class="small">(선택) 능동 부저(액티브 부저)가 있으면 <b>+ → D8</b>, <b>− → GND</b>에 연결하세요. 사고 발생·검거 때 소리가 납니다.</p>
+      <ol class="guide">
+        <li>아두이노 IDE에서 <b>라이브러리 매니저</b>를 열고 <b>IRremote</b> (Armin Joachimsmeyer, 4.x 버전)를 설치합니다.</li>
+        <li>보드는 <b>Arduino Uno</b>를 선택하세요. (오렌지보드는 우노 호환 보드입니다.) 포트는 오렌지보드가 연결된 COM 포트를 선택합니다.</li>
+        <li>아래 코드를 붙여넣고 업로드합니다. 시리얼 모니터에 <code>READY</code>가 나오면 정상입니다.</li>
+        <li><b>업로드가 끝나면 아두이노 IDE의 시리얼 모니터를 꼭 닫으세요.</b> 시리얼 모니터가 열려 있으면 웹앱이 포트를 쓸 수 없습니다.</li>
+        <li>이 HTML 파일을 <b>크롬 또는 엣지</b>로 열고 [오렌지보드 연결] → 포트(USB-SERIAL CH340 등) 선택.</li>
+        <li>리모컨 버튼이 다르게 동작하면 오른쪽 [리모컨 설정]에서 종류를 바꾸거나 [버튼 학습]으로 직접 지정하세요.</li>
+      </ol>
+      <pre id="codeView"></pre>
+    </div>
+  </div>
+</div>
+
+<script type="text/plain" id="arduinoCode">/*
+ * 리모컨 지리정보 탐험 - 오렌지보드용 코드
+ * IR 수신 센서 S(OUT) -> D3, VCC -> 5V, GND -> GND
+ * 필요 라이브러리: IRremote (Armin Joachimsmeyer) 4.x
+ * 보드 선택: Arduino Uno / 통신 속도: 9600
+ *
+ * 보내는 메시지 (한 줄씩)
+ *   IR,<명령코드>,<주소>   : 버튼을 새로 눌렀을 때 (16진수)
+ *   REP,<명령코드>,<주소>  : 버튼을 계속 누르고 있을 때
+ *   HB                     : 1초마다 "살아있음" 신호
+ *   READY                  : 시작 완료
+ * 받는 메시지
+ *   LED,1 / LED,0          : D13 LED 켜기/끄기 (현재 구역 가로등 상태 표시)
+ *   PING                   : PONG 으로 응답
+ *   BUZ,<밀리초>           : D8 능동 부저 울리기 (선택, 사고·검거 알림)
+ * ※ tone() 은 IRremote 와 타이머가 겹쳐서 쓰지 않고, 능동 부저를 HIGH/LOW 로만 켭니다.
+ */
+#include <IRremote.hpp>
+
+const uint8_t IR_RECEIVE_PIN = 3;
+const uint8_t LED_PIN = 13;
+const uint8_t BUZZER_PIN = 8;
+unsigned long buzzOffAt = 0;
+
+unsigned long lastHeartbeat = 0;
+unsigned long lastPressTime = 0;
+uint16_t lastCommand = 0xFFFF;
+
+char rxBuf[32];
+uint8_t rxLen = 0;
+
+void printHex2(uint16_t v) {
+  if (v < 0x10) Serial.print('0');
+  Serial.print(v, HEX);
+}
+
+void handleLine(const char *line) {
+  if (strcmp(line, "LED,1") == 0) digitalWrite(LED_PIN, HIGH);
+  else if (strcmp(line, "LED,0") == 0) digitalWrite(LED_PIN, LOW);
+  else if (strcmp(line, "PING") == 0) Serial.println(F("PONG"));
+  else if (strncmp(line, "BUZ,", 4) == 0) {
+    int ms = atoi(line + 4);
+    if (ms > 0 && ms <= 3000) {
+      digitalWrite(BUZZER_PIN, HIGH);
+      buzzOffAt = millis() + ms;
+      if (buzzOffAt == 0) buzzOffAt = 1;
+    }
+  }
+}
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW);
+  pinMode(BUZZER_PIN, OUTPUT);
+  digitalWrite(BUZZER_PIN, LOW);
+  IrReceiver.begin(IR_RECEIVE_PIN, DISABLE_LED_FEEDBACK);
+  delay(100);
+  Serial.println(F("READY,IR_D3"));
+}
+
+void loop() {
+  // 1) 리모컨 신호 읽기
+  if (IrReceiver.decode()) {
+    IRData &d = IrReceiver.decodedIRData;
+    // 잡음(UNKNOWN)은 무시해서 엉뚱한 동작을 막음
+    if (d.protocol != UNKNOWN) {
+      bool isRepeat = (d.flags & IRDATA_FLAGS_IS_REPEAT);
+      unsigned long now = millis();
+      // 같은 버튼이 아주 짧은 간격으로 두 번 들어오면 한 번만 처리
+      if (!isRepeat && d.command == lastCommand && now - lastPressTime < 120) {
+        // 무시
+      } else {
+        Serial.print(isRepeat ? F("REP,") : F("IR,"));
+        printHex2(d.command);
+        Serial.print(',');
+        printHex2(d.address);
+        Serial.println();
+        if (!isRepeat) {
+          lastCommand = d.command;
+          lastPressTime = now;
+        }
+      }
+    }
+    IrReceiver.resume();
+  }
+
+  // 2) 웹앱에서 오는 명령 읽기
+  while (Serial.available() > 0) {
+    char c = Serial.read();
+    if (c == '\n' || c == '\r') {
+      if (rxLen > 0) {
+        rxBuf[rxLen] = '\0';
+        handleLine(rxBuf);
+        rxLen = 0;
+      }
+    } else if (rxLen < sizeof(rxBuf) - 1) {
+      rxBuf[rxLen++] = c;
+    } else {
+      rxLen = 0; // 너무 긴 줄은 버림
+    }
+  }
+
+  // 3) 부저 끄기 (멈추지 않고 시간만 확인)
+  if (buzzOffAt != 0 && (long)(millis() - buzzOffAt) >= 0) {
+    digitalWrite(BUZZER_PIN, LOW);
+    buzzOffAt = 0;
+  }
+
+  // 4) 1초마다 연결 확인 신호
+  if (millis() - lastHeartbeat >= 1000) {
+    lastHeartbeat = millis();
+    Serial.println(F("HB"));
+  }
+}
+</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+/* ===================== 저장소(안전하게) ===================== */
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; }catch(e){ return d; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+};
+
+/* ===================== 구역 데이터 ===================== */
+const DEFAULT_ZONES = [
+  { id:1, name:'의창구 (창원시청)',   lat:35.2280, lng:128.6812, color:'var(--z1)', hex:'#ef4444' },
+  { id:2, name:'성산구 (성산구청)',   lat:35.1985, lng:128.7030, color:'var(--z2)', hex:'#f59e0b' },
+  { id:3, name:'마산합포구 (마산항)', lat:35.1960, lng:128.5700, color:'var(--z3)', hex:'#22c55e' },
+  { id:4, name:'마산회원구 (회원동)', lat:35.2210, lng:128.5790, color:'var(--z4)', hex:'#3b82f6' },
+  { id:5, name:'진해구 (중원로터리)', lat:35.1495, lng:128.6600, color:'var(--z5)', hex:'#a855f7' }
+];
+
+let zones = store.get('irmap_zones', null) || JSON.parse(JSON.stringify(DEFAULT_ZONES));
+const lightState = {}; zones.forEach(z => lightState[z.id] = false);
+const ZONE_ZOOM = 15;
+
+/* ===================== 지도 ===================== */
+const map = L.map('map', { zoomControl:true, keyboard:false }).setView([35.20, 128.64], 12);
+// ts 값은 2분마다 바뀌어서 실시간 교통 타일을 새로 받아오게 함
+const tsFn = () => Math.floor(Date.now() / 120000);
+const G = lyrs => L.tileLayer(`https://mt{s}.google.com/vt/lyrs=${lyrs}&hl=ko&x={x}&y={y}&z={z}&ts={ts}`, { subdomains:'0123', maxZoom:20, ts:tsFn, attribution:'Map data © Google' });
+const layers = {
+  google: G('m'), googleSat: G('y'),
+  googleT: G('m,traffic'), googleSatT: G('y,traffic'),
+  osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { subdomains:'abc', maxZoom:19, attribution:'© OpenStreetMap contributors' })
+};
+const selLayer = document.getElementById('selLayer');
+let curLayer = store.get('irmap_layer', 'google');
+if(!['google','googleSat','osm'].includes(curLayer)) curLayer = 'google';
+let trafficOn = false, activeLayer = null;
+function applyBase(){
+  if(activeLayer) map.removeLayer(activeLayer);
+  let key = curLayer;
+  if(trafficOn){
+    if(key === 'osm'){ key = curLayer = 'google'; selLayer.value = 'google'; toast('실시간 교통은 Google 지도에서 보여요'); }
+    key += 'T';
+  }
+  activeLayer = layers[key].addTo(map);
+  document.getElementById('trafficLegend').classList.toggle('show', trafficOn);
+}
+selLayer.value = curLayer;
+applyBase();
+selLayer.addEventListener('change', e => { curLayer = e.target.value; store.set('irmap_layer', curLayer); applyBase(); });
+document.getElementById('chkTraffic').addEventListener('change', e => {
+  trafficOn = e.target.checked; applyBase();
+  if(trafficOn) toast('🚦 실시간 교통 표시 (2분마다 새로고침)');
+});
+setInterval(() => { if(trafficOn && activeLayer) activeLayer.redraw(); }, 120000);
+document.getElementById('chkNight').addEventListener('change', e => {
+  document.getElementById('map').classList.toggle('night', e.target.checked);
+});
+
+const zoneLayers = {}; // id -> {circle, lamps:[]}
+function lampOffsets(){
+  const pts = [];
+  for(let r=-1; r<=1; r++) for(let c=-1; c<=1; c++){
+    pts.push([r*0.0032 + (c*0.0006), c*0.0040 + (r*0.0007)]);
+  }
+  // 도로를 따라 늘어선 느낌을 위해 바깥쪽에 몇 개 더
+  pts.push([0, 0.0080], [0, -0.0080], [0.0065, 0], [-0.0065, 0]);
+  return pts;
+}
+function drawZones(){
+  Object.values(zoneLayers).forEach(zl => { map.removeLayer(zl.circle); zl.lamps.forEach(m => map.removeLayer(m)); });
+  zones.forEach(z => {
+    const circle = L.circle([z.lat, z.lng], { radius:900, color:z.hex, weight:2, fillColor:z.hex, fillOpacity:.08, dashArray:'6 6' }).addTo(map);
+    circle.bindTooltip(`${z.id}구역 · ${z.name}`, { permanent:true, direction:'top', className:'zone-label', offset:[0,-10] });
+    circle.on('click', () => goZone(z.id));
+    const lamps = lampOffsets().map(([dy, dx]) => {
+      const icon = L.divIcon({ className:'', html:`<div class="lamp-wrap ${lightState[z.id]?'on':''}"><div class="lamp"></div></div>`, iconSize:[22,22], iconAnchor:[11,11] });
+      return L.marker([z.lat+dy, z.lng+dx], { icon, interactive:false, keyboard:false }).addTo(map);
+    });
+    zoneLayers[z.id] = { circle, lamps };
+  });
+  renderZoneList();
+}
+function updateLamps(id){
+  const zl = zoneLayers[id]; if(!zl) return;
+  zl.lamps.forEach(m => { const el = m.getElement(); if(el){ const w = el.querySelector('.lamp-wrap'); if(w) w.classList.toggle('on', lightState[id]); } });
+  zl.circle.setStyle({ fillOpacity: lightState[id] ? .18 : .08, fillColor: lightState[id] ? '#ffd43b' : zones.find(z=>z.id===id).hex });
+}
+
+/* ===================== 구역 목록 UI ===================== */
+let activeZone = null;
+function renderZoneList(){
+  const box = document.getElementById('zoneList'); box.innerHTML = '';
+  zones.forEach(z => {
+    const d = document.createElement('div');
+    d.className = 'zone' + (activeZone===z.id ? ' active' : '');
+    d.innerHTML = `<div class="znum" style="background:${z.hex}">${z.id}</div><div class="zname">${z.name}</div><div class="zlamp ${lightState[z.id]?'on':''}">${lightState[z.id]?'가로등 ON':'가로등 OFF'}</div>`;
+    d.addEventListener('click', () => goZone(z.id));
+    d.querySelector('.zlamp').addEventListener('click', ev => { ev.stopPropagation(); toggleLight(z.id); });
+    box.appendChild(d);
+  });
+  const sel = document.getElementById('selZoneEdit');
+  const keep = sel.value;
+  sel.innerHTML = zones.map(z => `<option value="${z.id}">${z.id}구역</option>`).join('');
+  if(keep) sel.value = keep;
+}
+function nearestZone(){
+  const c = map.getCenter(); let best = null, bd = Infinity;
+  zones.forEach(z => { const d = map.distance(c, [z.lat, z.lng]); if(d < bd){ bd = d; best = z; } });
+  return best;
+}
+map.on('moveend', () => {
+  const n = nearestZone();
+  const id = (n && map.distance(map.getCenter(), [n.lat, n.lng]) < 4000) ? n.id : null;
+  if(id !== activeZone){ activeZone = id; renderZoneList(); sendLedState(); }
+});
+
+/* ===================== 동작 ===================== */
+const ACTIONS = {
+  Z1:'1구역 이동', Z2:'2구역 이동', Z3:'3구역 이동', Z4:'4구역 이동', Z5:'5구역 이동',
+  UP:'위로 이동', DOWN:'아래로 이동', LEFT:'왼쪽 이동', RIGHT:'오른쪽 이동',
+  LIGHT:'현재 구역 가로등', ALL_LIGHT:'전체 가로등', ZOOM_IN:'확대', ZOOM_OUT:'축소', HOME:'전체 보기',
+  ALERT_GO:'최근 상황으로 이동', DISPATCH:'출동/검거', MISSION:'도주차량 훈련'
+};
+const PAN = 160;
+function goZone(id){
+  const z = zones.find(z => z.id === id); if(!z) return;
+  map.flyTo([z.lat, z.lng], ZONE_ZOOM, { duration:1.2 });
+  toast(`📍 ${z.id}구역 · ${z.name}`);
+}
+function toggleLight(id){
+  if(id == null){ toast('구역 가까이로 이동한 뒤 눌러 주세요'); return; }
+  lightState[id] = !lightState[id];
+  updateLamps(id); renderZoneList(); sendLedState(); refreshCctvRanges();
+  toast(`💡 ${id}구역 가로등 ${lightState[id] ? 'ON' : 'OFF'}`);
+}
+function toggleAllLights(){
+  const anyOff = zones.some(z => !lightState[z.id]);
+  zones.forEach(z => { lightState[z.id] = anyOff; updateLamps(z.id); });
+  renderZoneList(); sendLedState(); refreshCctvRanges();
+  toast(`💡 전체 가로등 ${anyOff ? 'ON' : 'OFF'}`);
+}
+function doAction(act, isRepeat=false){
+  if(!act) return;
+  flashRemote(act);
+  const fast = isRepeat ? { animate:true, duration:.15 } : { animate:true, duration:.25 };
+  switch(act){
+    case 'Z1': case 'Z2': case 'Z3': case 'Z4': case 'Z5': if(!isRepeat) goZone(+act[1]); break;
+    case 'UP': map.panBy([0,-PAN], fast); break;
+    case 'DOWN': map.panBy([0, PAN], fast); break;
+    case 'LEFT': map.panBy([-PAN,0], fast); break;
+    case 'RIGHT': map.panBy([ PAN,0], fast); break;
+    case 'ZOOM_IN': map.zoomIn(); break;
+    case 'ZOOM_OUT': map.zoomOut(); break;
+    case 'HOME': if(!isRepeat){ map.flyToBounds(L.latLngBounds(zones.map(z=>[z.lat,z.lng])).pad(0.25), { duration:1 }); toast('🗺️ 전체 보기'); } break;
+    case 'LIGHT': if(!isRepeat){ const n = nearestZone(); toggleLight(activeZone ?? (n ? n.id : null)); } break;
+    case 'ALL_LIGHT': if(!isRepeat) toggleAllLights(); break;
+    case 'ALERT_GO': if(!isRepeat) goAlert(); break;
+    case 'DISPATCH': if(!isRepeat) dispatch(); break;
+    case 'MISSION': if(!isRepeat) toggleMission(); break;
+  }
+}
+const REPEATABLE = new Set(['UP','DOWN','LEFT','RIGHT','ZOOM_IN','ZOOM_OUT']);
+
+/* ===================== 화면 리모컨 & 키보드 ===================== */
+document.querySelectorAll('.remote button').forEach(b => b.addEventListener('click', () => doAction(b.dataset.act)));
+function flashRemote(act){
+  document.querySelectorAll(`.remote button[data-act="${act}"]`).forEach(b => { b.classList.add('flash'); setTimeout(()=>b.classList.remove('flash'), 180); });
+}
+document.addEventListener('keydown', e => {
+  if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)) return;
+  const k = e.key; let act = null;
+  if(/^[1-5]$/.test(k)) act = 'Z' + k;
+  else if(k==='ArrowUp') act='UP'; else if(k==='ArrowDown') act='DOWN';
+  else if(k==='ArrowLeft') act='LEFT'; else if(k==='ArrowRight') act='RIGHT';
+  else if(k==='l'||k==='L'||k===' ') act='LIGHT';
+  else if(k==='a'||k==='A') act='ALL_LIGHT';
+  else if(k==='+'||k==='=') act='ZOOM_IN'; else if(k==='-') act='ZOOM_OUT';
+  else if(k==='0') act='HOME';
+  else if(k==='6') act='ALERT_GO';
+  else if(k==='7'||k==='Enter') act='DISPATCH';
+  else if(k==='8') act='MISSION';
+  if(act){ e.preventDefault(); doAction(act, e.repeat); }
+});
+
+/* ===================== 리모컨 코드 매핑 ===================== */
+// IRremote 4.x 의 NEC "command" 값 기준
+const PRESETS = {
+  '17': { '45':'Z1','46':'Z2','47':'Z3','44':'Z4','40':'Z5',
+          '18':'UP','52':'DOWN','08':'LEFT','5A':'RIGHT','1C':'LIGHT',
+          '09':'ALL_LIGHT','0D':'ZOOM_IN','16':'ZOOM_OUT','19':'HOME',
+          '43':'ALERT_GO','07':'DISPATCH','15':'MISSION' },
+  '21': { '0C':'Z1','18':'Z2','5E':'Z3','08':'Z4','1C':'Z5',
+          '47':'UP','45':'DOWN','44':'LEFT','40':'RIGHT','43':'LIGHT',
+          '09':'ALL_LIGHT','15':'ZOOM_IN','07':'ZOOM_OUT','16':'HOME',
+          '5A':'ALERT_GO','42':'DISPATCH','52':'MISSION' }
+};
+// 저장된 학습값은 유지하고, 새로 생긴 기능의 기본 버튼만 채워 넣기
+function loadKeymap(t){
+  const saved = store.get('irmap_keymap_' + t, null);
+  if(!saved) return { ...PRESETS[t] };
+  const km = { ...saved }; const used = new Set(Object.values(km));
+  Object.entries(PRESETS[t]).forEach(([c, a]) => { if(!used.has(a) && !(c in km)) km[c] = a; });
+  return km;
+}
+const KEY_LABEL = {
+  '17': { '45':'1','46':'2','47':'3','44':'4','40':'5','43':'6','07':'7','15':'8','09':'9','16':'*','19':'0','0D':'#','18':'▲','52':'▼','08':'◀','5A':'▶','1C':'OK' },
+  '21': { '45':'CH-','46':'CH','47':'CH+','44':'|◀◀','40':'▶▶|','43':'▶||','07':'VOL-','15':'VOL+','09':'EQ','16':'0','19':'100+','0D':'200+','0C':'1','18':'2','5E':'3','08':'4','1C':'5','5A':'6','42':'7','52':'8','4A':'9' }
+};
+let remoteType = store.get('irmap_remote', '17');
+if(!PRESETS[remoteType]) remoteType = '17';
+let keymap = loadKeymap(remoteType);
+const selRemote = document.getElementById('selRemote');
+selRemote.value = remoteType;
+selRemote.addEventListener('change', () => {
+  remoteType = selRemote.value; store.set('irmap_remote', remoteType);
+  keymap = loadKeymap(remoteType);
+  renderMapTable(); log(`리모컨 종류: ${selRemote.options[selRemote.selectedIndex].text}`, 'act');
+});
+document.getElementById('selLearn').innerHTML = Object.entries(ACTIONS).map(([k,v]) => `<option value="${k}">${v}</option>`).join('');
+function renderMapTable(){
+  const rows = Object.keys(ACTIONS).map(act => {
+    const code = Object.keys(keymap).find(c => keymap[c] === act);
+    const lab = code ? (KEY_LABEL[remoteType][code] ? `${KEY_LABEL[remoteType][code]} (0x${code})` : `0x${code}`) : '없음';
+    return `<tr><td>${ACTIONS[act]}</td><td>${lab}</td></tr>`;
+  });
+  document.getElementById('mapTable').innerHTML = rows.join('');
+}
+let learning = null;
+document.getElementById('btnLearn').addEventListener('click', () => {
+  learning = document.getElementById('selLearn').value;
+  document.getElementById('learnMsg').textContent = `「${ACTIONS[learning]}」에 쓸 리모컨 버튼을 누르세요…`;
+});
+document.getElementById('btnResetMap').addEventListener('click', () => {
+  keymap = { ...PRESETS[remoteType] }; store.set('irmap_keymap_' + remoteType, null);
+  try{ localStorage.removeItem('irmap_keymap_' + remoteType); }catch(e){}
+  renderMapTable(); document.getElementById('learnMsg').textContent = '기본값으로 되돌렸어요';
+});
+function learnCode(code){
+  Object.keys(keymap).forEach(c => { if(keymap[c] === learning) delete keymap[c]; });
+  keymap[code] = learning;
+  store.set('irmap_keymap_' + remoteType, keymap);
+  document.getElementById('learnMsg').textContent = `✔ 0x${code} → ${ACTIONS[learning]}`;
+  learning = null; renderMapTable();
+}
+
+/* ===================== IR 메시지 처리 ===================== */
+let lastAct = null, lastRepeatAt = 0;
+function handleLine(line){
+  line = line.trim(); if(!line) return;
+  S.lastRx = Date.now();
+  if(line === 'HB' || line === 'PONG'){ updateStatus(); return; }
+  if(line.startsWith('READY')){ log('오렌지보드 준비 완료 (IR 센서: D3)', 'act'); sendLedState(); updateStatus(); return; }
+  const p = line.split(',');
+  if((p[0] === 'IR' || p[0] === 'REP') && p[1]){
+    const code = p[1].toUpperCase().padStart(2,'0');
+    const isRep = p[0] === 'REP';
+    if(!isRep && learning){ learnCode(code); return; }
+    if(!isRep){
+      const act = keymap[code];
+      const label = KEY_LABEL[remoteType][code] || '?';
+      log(`버튼 0x${code} [${label}] → ${act ? ACTIONS[act] : '지정 안 됨'}`, 'rx');
+      lastAct = act || null;
+      doAction(act);
+    } else if(lastAct && REPEATABLE.has(lastAct)){
+      const now = Date.now();
+      if(now - lastRepeatAt > 110){ lastRepeatAt = now; doAction(lastAct, true); }
+    }
+    return;
+  }
+  log(line, 'rx');
+}
+
+/* ===================== Web Serial (안정적인 연결) ===================== */
+const S = { port:null, reader:null, loop:null, userClosed:false, lastRx:0, reconnectTimer:null, writeChain:Promise.resolve(), opening:false };
+const BAUD = 9600;
+const hasSerial = 'serial' in navigator;
+const chkAuto = document.getElementById('chkAuto');
+chkAuto.checked = store.get('irmap_auto', true);
+chkAuto.addEventListener('change', () => store.set('irmap_auto', chkAuto.checked));
+
+function setStatus(state, text){
+  const dot = document.getElementById('statusDot');
+  dot.className = 'dot' + (state==='ok' ? ' ok' : state==='warn' ? ' warn' : '');
+  document.getElementById('statusText').textContent = text;
+  document.getElementById('btnConnect').style.display = S.port ? 'none' : '';
+  document.getElementById('btnDisconnect').style.display = S.port ? '' : 'none';
+}
+function updateStatus(){
+  if(!S.port){ return; }
+  const age = Date.now() - S.lastRx;
+  if(S.lastRx === 0) setStatus('warn', '연결됨 · 보드 응답 대기 중…');
+  else if(age < 3000) setStatus('ok', '오렌지보드 연결됨');
+  else setStatus('warn', '연결됨 · 응답 없음 (코드 업로드 확인)');
+}
+setInterval(updateStatus, 1000);
+
+async function openPort(port){
+  if(S.opening || S.port) return;
+  S.opening = true;
+  try{
+    setStatus('warn', '포트 여는 중…');
+    await port.open({ baudRate:BAUD, bufferSize:8192 });
+    S.port = port; S.userClosed = false; S.lastRx = 0;
+    const info = port.getInfo ? port.getInfo() : {};
+    log(`USB 포트 열림 ${info.usbVendorId ? '(VID ' + info.usbVendorId.toString(16) + ')' : ''} · 보드가 재시작 중이에요 (약 2초)`, 'act');
+    updateStatus();
+    S.loop = readLoop(port);
+  }catch(e){
+    const msg = String(e.message || e);
+    if(/already open|Failed to open/i.test(msg)) log('포트를 열 수 없어요. 아두이노 IDE 시리얼 모니터나 다른 탭이 사용 중인지 확인하세요.', 'err');
+    else log('연결 실패: ' + msg, 'err');
+    setStatus('bad', '연결 실패');
+    scheduleReconnect();
+  }finally{ S.opening = false; }
+}
+
+async function readLoop(port){
+  const decoder = new TextDecoder();
+  let buf = '';
+  while(port.readable && S.port === port){
+    const reader = port.readable.getReader(); S.reader = reader;
+    try{
+      while(true){
+        const { value, done } = await reader.read();
+        if(done) break;
+        if(value){
+          buf += decoder.decode(value, { stream:true });
+          let idx;
+          while((idx = buf.indexOf('\n')) >= 0){
+            const line = buf.slice(0, idx); buf = buf.slice(idx + 1);
+            try{ handleLine(line); }catch(err){ console.error(err); }
+          }
+          if(buf.length > 1000) buf = ''; // 깨진 데이터 방지
+        }
+      }
+    }catch(e){
+      const name = e && e.name;
+      // 일시적인 오류는 계속 읽고, 장치 분리 같은 치명적 오류는 종료
+      if(['BufferOverrunError','BreakError','FramingError','ParityError'].includes(name)){ log('일시적 수신 오류(' + name + ') · 계속 진행', 'err'); }
+      else { if(!S.userClosed) log('USB 연결이 끊어졌어요: ' + (e.message || name), 'err'); break; }
+    }finally{
+      try{ reader.releaseLock(); }catch(_){}
+      S.reader = null;
+    }
+    if(S.userClosed) break;
+  }
+  await closePort(port);
+}
+
+async function closePort(port){
+  try{ await port.close(); }catch(_){}
+  if(S.port === port){ S.port = null; }
+  setStatus('bad', S.userClosed ? '연결 해제됨' : '연결 끊김');
+  if(!S.userClosed) scheduleReconnect();
+}
+
+async function disconnect(){
+  S.userClosed = true;
+  clearTimeout(S.reconnectTimer);
+  const port = S.port;
+  if(!port) return;
+  try{ await S.writeChain; }catch(_){}
+  try{ if(S.reader) await S.reader.cancel(); }catch(_){}
+  try{ await S.loop; }catch(_){}
+  log('연결을 해제했어요', 'act');
+}
+
+function scheduleReconnect(){
+  clearTimeout(S.reconnectTimer);
+  if(!hasSerial || S.userClosed || !chkAuto.checked) return;
+  S.reconnectTimer = setTimeout(async () => {
+    if(S.port || S.userClosed) return;
+    const ports = await navigator.serial.getPorts();
+    if(ports.length){ setStatus('warn', '재연결 시도 중…'); openPort(ports[0]); }
+    else setStatus('bad', 'USB 케이블을 확인하세요');
+  }, 2000);
+}
+
+function send(line){
+  if(!S.port || !S.port.writable) return;
+  S.writeChain = S.writeChain.then(async () => {
+    if(!S.port || !S.port.writable) return;
+    const w = S.port.writable.getWriter();
+    try{ await w.write(new TextEncoder().encode(line + '\n')); }
+    catch(e){ console.warn('write fail', e); }
+    finally{ try{ w.releaseLock(); }catch(_){} }
+  }).catch(()=>{});
+}
+function sendLedState(){
+  const on = activeZone != null ? lightState[activeZone] : zones.some(z => lightState[z.id]);
+  send('LED,' + (on ? 1 : 0));
+}
+
+document.getElementById('btnConnect').addEventListener('click', async () => {
+  if(!hasSerial){ alert('이 브라우저는 USB 시리얼(Web Serial)을 지원하지 않아요.\n크롬 또는 엣지(PC)에서 열어 주세요.'); return; }
+  try{
+    const port = await navigator.serial.requestPort();
+    S.userClosed = false;
+    openPort(port);
+  }catch(e){ if(e.name !== 'NotFoundError') log('포트 선택 오류: ' + e.message, 'err'); }
+});
+document.getElementById('btnDisconnect').addEventListener('click', disconnect);
+
+if(hasSerial){
+  navigator.serial.addEventListener('connect', e => {
+    log('USB 장치가 꽂혔어요', 'act');
+    if(!S.port && chkAuto.checked){ S.userClosed = false; clearTimeout(S.reconnectTimer); setTimeout(() => openPort(e.target), 1500); }
+  });
+  navigator.serial.addEventListener('disconnect', e => {
+    if(e.target === S.port){ log('USB 장치가 분리되었어요', 'err'); setStatus('bad', 'USB 분리됨'); }
+  });
+  // 이전에 허락한 포트가 있으면 자동으로 연결
+  navigator.serial.getPorts().then(ports => { if(ports.length && chkAuto.checked) openPort(ports[0]); });
+  window.addEventListener('beforeunload', () => { S.userClosed = true; try{ S.reader && S.reader.cancel(); }catch(_){} });
+}else{
+  setStatus('bad', '크롬/엣지에서 열어 주세요');
+}
+
+/* ===================== 중앙관제 (모의 훈련) ===================== */
+const SIM = 6;                 // 시뮬레이션 배속 (차량이 실제보다 6배 빠르게 움직임)
+const TICK = 200;              // 사고·CCTV 판정 주기(ms)
+const CAPTURE_PX = 70;         // 화면 가운데 원 반지름(px)
+const OPS = { on:false, loading:false, pendingMission:false, roads:null, cars:[], cctvs:[], accidents:[], events:[], score:0, accDone:0, catches:0, timer:null, raf:null, nextAccAt:0, mission:null, evId:0 };
+const carLayer = L.layerGroup().addTo(map);
+const opsLayer = L.layerGroup().addTo(map);
+const rand = (a, b) => a + Math.random() * (b - a);
+const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function centerPx(ll){
+  const p = map.latLngToContainerPoint(ll), s = map.getSize();
+  return Math.hypot(p.x - s.x / 2, p.y - s.y / 2);
+}
+function bearing(a, b){
+  const dy = b.lat - a.lat, dx = (b.lng - a.lng) * Math.cos(a.lat * Math.PI / 180);
+  return (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+}
+const DIRS = ['북','북동','동','남동','남','남서','서','북서'];
+const dirOf = deg => DIRS[Math.round((((deg % 360) + 360) % 360) / 45) % 8];
+let actx = null;
+function beep(freq = 880, n = 1){
+  try{
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    for(let i = 0; i < n; i++){
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = 'square'; o.frequency.value = freq; g.gain.value = 0.04;
+      o.connect(g).connect(actx.destination);
+      const t = actx.currentTime + i * 0.25; o.start(t); o.stop(t + 0.15);
+    }
+  }catch(e){}
+}
+
+/* --- 도로 경로: OSRM 공개 길찾기 서버에서 실제 도로 모양을 받아옴 --- */
+const OSRM = 'https://router.project-osrm.org/route/v1/driving/';
+function makeRoute(lls){
+  const pts = lls.map(p => L.latLng(p[0], p[1]));
+  const cum = [0];
+  for(let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + pts[i - 1].distanceTo(pts[i]));
+  return { pts, cum, len:Math.max(1, cum[cum.length - 1]) };
+}
+function reverseRoute(r){ return makeRoute(r.pts.slice().reverse().map(p => [p.lat, p.lng])); }
+// 경로 위 s(m) 지점의 좌표와 진행 방향
+function posAt(r, s){
+  s = Math.max(0, Math.min(r.len, s));
+  let lo = 0, hi = r.cum.length - 1;
+  while(hi - lo > 1){ const m = (lo + hi) >> 1; if(r.cum[m] <= s) lo = m; else hi = m; }
+  const a = r.pts[lo], b = r.pts[hi] || a, seg = r.cum[hi] - r.cum[lo];
+  const k = seg > 0 ? (s - r.cum[lo]) / seg : 0;
+  return { ll:L.latLng(a.lat + (b.lat - a.lat) * k, a.lng + (b.lng - a.lng) * k), deg: seg > 0.5 ? bearing(a, b) : null };
+}
+async function fetchRoute(wps){
+  const coords = wps.map(p => `${p[1].toFixed(5)},${p[0].toFixed(5)}`).join(';');
+  const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 8000);
+  try{
+    const res = await fetch(`${OSRM}${coords}?overview=full&geometries=geojson`, { signal:ctl.signal });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const j = await res.json();
+    if(j.code !== 'Ok' || !j.routes || !j.routes[0]) throw new Error(j.code || '경로 없음');
+    return j.routes[0].geometry.coordinates.map(c => [+c[1].toFixed(5), +c[0].toFixed(5)]);
+  }finally{ clearTimeout(tm); }
+}
+const roadKey = () => 'v1|' + zones.map(z => z.lat.toFixed(4) + ',' + z.lng.toFixed(4)).join('|');
+const zDist = (a, b) => L.latLng(a.lat, a.lng).distanceTo([b.lat, b.lng]);
+function setOpsLabel(t){ document.getElementById('btnOps').textContent = t; }
+
+async function loadRoads(){
+  const key = roadKey(), cached = store.get('irmap_roads', null);
+  let data = (cached && cached.key === key) ? cached.data : null;
+  if(!data){
+    data = { loops:{}, links:[], straight:false };
+    const jobs = [];
+    // 구역마다 중심(교차점)에서 출발해 동네를 한 바퀴 도는 순환 도로 3개
+    zones.forEach(z => {
+      data.loops[z.id] = [];
+      for(let k = 0; k < 3; k++){
+        const base = k * 2 * Math.PI / 3, wps = [[z.lat, z.lng]];
+        for(let j = 0; j < 3; j++){
+          const a = base + j * 0.7 + rand(-0.2, 0.2), d = rand(0.006, 0.012);
+          wps.push([z.lat + Math.sin(a) * d * 0.8, z.lng + Math.cos(a) * d]);
+        }
+        wps.push([z.lat, z.lng]);
+        jobs.push({ type:'loop', zid:z.id, wps });
+      }
+    });
+    // 가까운 구역끼리 잇는 연결 도로
+    const pairs = new Set();
+    zones.forEach(z => zones.filter(o => o.id !== z.id).sort((a, b) => zDist(z, a) - zDist(z, b)).slice(0, 2)
+      .forEach(o => pairs.add(Math.min(z.id, o.id) + '-' + Math.max(z.id, o.id))));
+    pairs.forEach(p => {
+      const [a, b] = p.split('-').map(Number), za = zones.find(z => z.id === a), zb = zones.find(z => z.id === b);
+      jobs.push({ type:'link', a, b, wps:[[za.lat, za.lng], [zb.lat, zb.lng]] });
+    });
+    let online = true, done = 0;
+    for(const job of jobs){
+      let line = null;
+      if(online){
+        try{ line = await fetchRoute(job.wps); }
+        catch(e){ online = false; log('길찾기 서버에 연결하지 못했어요(' + (e.message || e) + ') → 직선 경로로 대신 표시', 'err'); }
+      }
+      if(!OPS.loading) return null; // 사용자가 취소
+      if(!line){ line = job.wps.map(p => [+p[0].toFixed(5), +p[1].toFixed(5)]); data.straight = true; }
+      if(job.type === 'loop') data.loops[job.zid].push(line); else data.links.push({ a:job.a, b:job.b, line });
+      done++; setOpsLabel(`🛣️ 도로 불러오는 중 ${done}/${jobs.length} (누르면 취소)`);
+      if(online && done < jobs.length) await sleep(1100); // 공개 서버 예절: 1초에 1번
+    }
+    if(!data.straight) store.set('irmap_roads', { key, data });
+  }
+  const roads = { loops:{}, linksFrom:{}, straight:data.straight };
+  zones.forEach(z => { roads.loops[z.id] = (data.loops[z.id] || []).map(makeRoute); roads.linksFrom[z.id] = []; });
+  data.links.forEach(l => {
+    const r = makeRoute(l.line);
+    if(roads.linksFrom[l.a]) roads.linksFrom[l.a].push({ to:l.b, route:r });
+    if(roads.linksFrom[l.b]) roads.linksFrom[l.b].push({ to:l.a, route:reverseRoute(r) });
+  });
+  return roads;
+}
+
+/* --- 가상 차량 (위에서 내려다본 자동차 모양) --- */
+const CAR_COLORS = ['#f8fafc', '#f8fafc', '#cbd5e1', '#94a3b8', '#1f2937', '#2563eb', '#dc2626', '#facc15'];
+function carIcon(color, cls = ''){
+  return L.divIcon({ className:'car-icon', iconSize:[20,20], iconAnchor:[10,10],
+    html:`<div class="car ${cls}"><svg width="10" height="18" viewBox="0 0 10 18">` +
+      `<rect x=".5" y=".5" width="9" height="17" rx="3" fill="${color}" stroke="#0b1020" stroke-width="1"/>` +
+      `<rect x="1.7" y="3.6" width="6.6" height="3.4" rx="1" fill="#1e3a5f"/>` +
+      `<rect x="1.7" y="12" width="6.6" height="2.6" rx="1" fill="#1e3a5f"/>` +
+      `<rect x="1.2" y=".8" width="2" height="1.2" fill="#fde68a"/><rect x="6.8" y=".8" width="2" height="1.2" fill="#fde68a"/>` +
+      `<rect x="1.2" y="16" width="2" height="1.3" fill="#ef4444"/><rect x="6.8" y="16" width="2" height="1.3" fill="#ef4444"/>` +
+      `</svg></div>` });
+}
+function applyCarDom(car, force){
+  const el = car.marker.getElement(); if(!el || !el.firstChild) return;
+  const inner = el.firstChild;
+  if(force || Math.abs(car.deg - (car._deg ?? -999)) > 2){ inner.style.transform = `rotate(${car.deg}deg) scale(var(--cs,1))`; car._deg = car.deg; }
+  if(force || car.jam !== car._jam){ inner.classList.toggle('jam', car.jam); car._jam = car.jam; }
+}
+function makeCar(zid, opts = {}){
+  const route = pick(OPS.roads.loops[zid]);
+  const car = { zid, route, s:rand(0, route.len), speed:opts.speed || rand(11, 17), roam:opts.roam ?? 0.25,
+                suspect:!!opts.suspect, onLink:false, jam:false, deg:0, shown:false };
+  const p = posAt(route, car.s); car.pos = p.ll; car.deg = p.deg ?? 0;
+  car.marker = L.marker(car.pos, { icon:carIcon(opts.color || pick(CAR_COLORS), car.suspect ? 'sus' : ''), keyboard:false, interactive:false, zIndexOffset:car.suspect ? 1000 : 0 });
+  if(!car.suspect){ car.marker.addTo(carLayer); car.shown = true; applyCarDom(car, true); }
+  return car;
+}
+function nextRoute(car){
+  if(car.onLink){ car.onLink = false; return pick(OPS.roads.loops[car.zid]); }
+  const links = OPS.roads.linksFrom[car.zid] || [];
+  if(links.length && Math.random() < car.roam){ const l = pick(links); car.zid = l.to; car.onLink = true; return l.route; }
+  return pick(OPS.roads.loops[car.zid]);
+}
+function stepCar(car, dt){
+  car.jam = OPS.accidents.some(a => !a.done && a.ll.distanceTo(car.pos) < 350);
+  car.s += car.speed * (car.jam ? 0.2 : 1) * dt;
+  while(car.s >= car.route.len){ car.s -= car.route.len; car.route = nextRoute(car); }
+  const p = posAt(car.route, car.s); car.pos = p.ll; if(p.deg != null) car.deg = p.deg;
+  car.marker.setLatLng(car.pos);
+  if(car.shown) applyCarDom(car);
+}
+// 확대 정도에 맞춰 자동차 크기 조절
+function updateCarScale(){
+  const z = map.getZoom();
+  const s = z <= 11 ? .5 : z <= 12 ? .65 : z <= 13 ? .8 : z <= 14 ? .9 : z <= 15 ? 1 : z <= 16 ? 1.3 : 1.6;
+  document.getElementById('map').style.setProperty('--cs', s);
+}
+map.on('zoomend', updateCarScale); updateCarScale();
+
+/* --- CCTV (도로 위에 설치) --- */
+function cctvRange(zid){ return lightState[zid] ? 750 : 400; }
+function refreshCctvRanges(){ OPS.cctvs.forEach(c => c.circle.setRadius(cctvRange(c.zoneId))); }
+function buildCctv(){
+  OPS.cctvs = [];
+  zones.forEach(z => {
+    const loops = OPS.roads.loops[z.id];
+    [0.3, 0.55, 0.8].forEach((f, i) => {
+      const r = loops[i % loops.length], ll = posAt(r, r.len * f).ll, name = `${z.id}구역 CCTV-${i + 1}`;
+      const circle = L.circle(ll, { radius:cctvRange(z.id), color:'#38bdf8', weight:1, fillOpacity:.05, dashArray:'3 4', interactive:false }).addTo(opsLayer);
+      L.marker(ll, { icon:L.divIcon({ className:'', html:'<div class="cctv">📹</div>', iconSize:[20,20], iconAnchor:[10,10] }), keyboard:false })
+        .bindTooltip(name).addTo(opsLayer);
+      OPS.cctvs.push({ ll, zoneId:z.id, name, circle, last:0 });
+    });
+  });
+}
+
+/* --- 상황판 --- */
+function addEvent(e){
+  e.id = ++OPS.evId; e.time = new Date().toTimeString().slice(0, 5);
+  OPS.events.unshift(e); if(OPS.events.length > 40) OPS.events.pop();
+  renderEvents(); log(e.text, 'act');
+}
+function renderEvents(){
+  const box = document.getElementById('evList'); box.innerHTML = '';
+  OPS.events.forEach(e => {
+    const d = document.createElement('div');
+    const done = e.ref ? e.ref.done : e.done;
+    d.className = 'ev' + (e.kind === 'sight' ? ' sight' : '') + (e.kind === 'info' ? ' info' : '') + (done ? ' done' : '');
+    d.textContent = `[${e.time}] ${e.text}`;
+    if(e.ll) d.addEventListener('click', () => map.flyTo(e.ll, Math.max(map.getZoom(), 15), { duration:1 }));
+    box.appendChild(d);
+  });
+  document.getElementById('stScore').textContent = OPS.score;
+  document.getElementById('stAcc').textContent = OPS.accDone;
+  document.getElementById('stCatch').textContent = OPS.catches;
+}
+
+/* --- 가상 사고 (도로 위에서 발생) --- */
+const ACC_TYPES = ['교통사고', '차량 고장', '도로 낙하물', '차량 화재'];
+function spawnAccident(){
+  const z = pick(zones), r = pick(OPS.roads.loops[z.id]);
+  const ll = posAt(r, r.len * rand(0.15, 0.85)).ll, type = pick(ACC_TYPES);
+  const a = { ll, zone:z, type, done:false };
+  a.marker = L.marker(ll, { icon:L.divIcon({ className:'', html:'<div class="acc"><span>💥</span></div>', iconSize:[30,30], iconAnchor:[15,15] }), keyboard:false, zIndexOffset:500 }).addTo(opsLayer);
+  OPS.accidents.push(a);
+  addEvent({ kind:'acc', ref:a, ll, text:`💥 ${z.id}구역 ${type} 발생 · 주변 도로 정체` });
+  toast(`🚨 ${z.id}구역 ${type} 발생!`); beep(880, 2); send('BUZ,300');
+}
+function resolveAccident(a){
+  a.done = true; opsLayer.removeLayer(a.marker);
+  OPS.score += 10; OPS.accDone++;
+  addEvent({ kind:'info', text:`🚑 ${a.zone.id}구역 ${a.type} 처리 완료 (+10점)` });
+  toast('🚑 출동 완료! +10점'); beep(1320, 1);
+}
+
+/* --- 관제 시작/중지 --- */
+let lastFrame = 0;
+function frame(t){
+  if(!OPS.on) return;
+  const dt = lastFrame ? Math.min(0.1, (t - lastFrame) / 1000) * SIM : 0; lastFrame = t;
+  OPS.cars.forEach(c => stepCar(c, dt));
+  if(OPS.mission) stepCar(OPS.mission.car, dt);
+  OPS.raf = requestAnimationFrame(frame);
+}
+async function startOps(){
+  if(OPS.on || OPS.loading) return;
+  OPS.loading = true; setOpsLabel('🛣️ 도로 준비 중… (누르면 취소)');
+  let roads = null;
+  try{ roads = await loadRoads(); }catch(e){ log('도로 준비 오류: ' + e.message, 'err'); }
+  if(!OPS.loading || !roads){ OPS.loading = false; OPS.pendingMission = false; setOpsLabel('🛰️ 관제 시작'); return; }
+  OPS.loading = false; OPS.roads = roads; OPS.on = true;
+  buildCctv();
+  zones.forEach(z => { for(let k = 0; k < 6; k++) OPS.cars.push(makeCar(z.id)); });
+  OPS.nextAccAt = Date.now() + 8000;
+  OPS.timer = setInterval(opsTick, TICK);
+  lastFrame = 0; OPS.raf = requestAnimationFrame(frame);
+  document.getElementById('crosshair').classList.add('show');
+  setOpsLabel('⏹ 관제 중지');
+  addEvent({ kind:'info', text:`🛰️ 관제 시작 · CCTV ${OPS.cctvs.length}대 · 가상 차량 ${OPS.cars.length}대 ` + (roads.straight ? '(길찾기 서버 연결 실패: 직선 경로로 운행)' : '실제 도로를 따라 운행') });
+  if(OPS.pendingMission){ OPS.pendingMission = false; startMission(); }
+}
+function stopOps(){
+  if(OPS.loading){ OPS.loading = false; OPS.pendingMission = false; setOpsLabel('🛰️ 관제 시작'); return; }
+  if(!OPS.on) return;
+  if(OPS.mission) endMission(false, '관제 종료로 훈련 중지');
+  clearInterval(OPS.timer); cancelAnimationFrame(OPS.raf);
+  carLayer.clearLayers(); opsLayer.clearLayers();
+  OPS.cars = []; OPS.accidents = []; OPS.cctvs = []; OPS.on = false;
+  document.getElementById('crosshair').classList.remove('show');
+  setOpsLabel('🛰️ 관제 시작');
+  addEvent({ kind:'info', text:'관제를 종료했어요' });
+}
+function opsTick(){
+  if(OPS.mission) missionTick();
+  if(Date.now() > OPS.nextAccAt){
+    if(OPS.accidents.filter(a => !a.done).length < 3) spawnAccident();
+    OPS.nextAccAt = Date.now() + rand(30000, 55000);
+  }
+}
+
+/* --- 도주차량 추적 훈련 --- */
+const CRIMES = ['편의점 강도', '뺑소니', '차량 절도', '소매치기'];
+const COLOR_HEX = { '흰색':'#f8fafc', '검은색':'#1f2937', '은색':'#cbd5e1', '파란색':'#2563eb', '빨간색':'#dc2626' };
+const KINDS = ['SUV', '승용차', '승합차', '소형 트럭'];
+function toggleMission(){ OPS.mission ? endMission(false, '훈련을 중지했어요') : startMission(); }
+function startMission(){
+  if(OPS.loading){ OPS.pendingMission = true; toast('도로 준비가 끝나면 훈련이 시작돼요'); return; }
+  if(!OPS.on){ OPS.pendingMission = true; startOps(); return; }
+  const z = pick(zones), cname = pick(Object.keys(COLOR_HEX));
+  const car = makeCar(z.id, { suspect:true, color:COLOR_HEX[cname], speed:rand(17, 20), roam:0.6 });
+  const head = 10 + Math.floor(Math.random() * 89), mid = pick(['가','나','다','라','마','바','사']), tail = 1000 + Math.floor(Math.random() * 9000);
+  const clue = `${cname} ${pick(KINDS)} · ${head}${mid} ${String(tail).slice(0, 2)}**`;
+  OPS.mission = { car, clue, start:Date.now(), visible:false, lastSight:null, sightMk:null };
+  addSighting(car.pos, `🚨 ${z.id}구역 ${pick(CRIMES)} 발생! 용의 차량(${clue}) 도주 중`);
+  toast('🚔 도주차량 추적 훈련 시작!'); beep(660, 3); send('BUZ,600');
+  document.getElementById('hud').classList.add('show');
+  document.getElementById('btnMission').textContent = '⏹ 훈련 중지';
+}
+function addSighting(ll, text){
+  const m = OPS.mission; if(!m) return;
+  m.lastSight = L.latLng(ll.lat, ll.lng);
+  if(m.sightMk) opsLayer.removeLayer(m.sightMk);
+  m.sightMk = L.marker(m.lastSight, { icon:L.divIcon({ className:'', html:'<div class="acc sight"><span>👁️</span></div>', iconSize:[30,30], iconAnchor:[15,15] }), keyboard:false, interactive:false }).addTo(opsLayer);
+  addEvent({ kind:'sight', ll:m.lastSight, text });
+  beep(990, 1);
+}
+function missionTick(){
+  const m = OPS.mission, car = m.car, now = Date.now();
+  let inCam = false;
+  OPS.cctvs.forEach(c => {
+    if(c.ll.distanceTo(car.pos) <= cctvRange(c.zoneId)){
+      inCam = true;
+      if(now - c.last > 8000){ c.last = now; addSighting(car.pos, `📹 ${c.name}: 용의 차량 포착 · ${dirOf(car.deg)}쪽으로 이동 중`); }
+    }
+  });
+  // CCTV 범위 안이거나, 확대한 화면 가운데 근처(드론 시야)에 있으면 보임
+  const vis = inCam || (map.getZoom() >= 14 && centerPx(car.pos) <= 160);
+  if(vis && !m.visible){ car.marker.addTo(opsLayer); car.shown = true; applyCarDom(car, true); }
+  if(!vis && m.visible){ opsLayer.removeLayer(car.marker); car.shown = false; }
+  m.visible = vis;
+  const sec = Math.floor((now - m.start) / 1000), left = Math.max(0, 300 - sec);
+  document.getElementById('hud').innerHTML =
+    `🚔 <b>도주차량 추적 훈련</b> · 단서: <b>${m.clue}</b> · ⏱ 남은 시간 ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}<br>` +
+    `<span class="small">👁️ 보라색 표시가 마지막 목격 위치예요. 경광등이 깜빡이는 용의 차량을 화면 가운데 원 안에 넣고 <b>7번(출동)</b>! 15 이상 확대해야 검거할 수 있어요.</span>`;
+  if(left === 0) endMission(false, '⏰ 시간 초과! 용의 차량이 관할 구역을 빠져나갔어요');
+}
+function endMission(success, msg){
+  const m = OPS.mission; if(!m) return;
+  opsLayer.removeLayer(m.car.marker); if(m.sightMk) opsLayer.removeLayer(m.sightMk);
+  OPS.mission = null;
+  document.getElementById('hud').classList.remove('show');
+  document.getElementById('btnMission').textContent = '🚔 도주차량 훈련';
+  addEvent({ kind:'info', text:msg }); toast(msg);
+}
+function captureSuspect(){
+  const m = OPS.mission, sec = Math.floor((Date.now() - m.start) / 1000);
+  const pts = Math.max(20, 100 - Math.floor(sec / 3));
+  OPS.score += pts; OPS.catches++;
+  beep(1320, 3); send('BUZ,1000');
+  endMission(true, `🚓 검거 성공! ${Math.floor(sec / 60)}분 ${sec % 60}초 만에 체포 (+${pts}점)`);
+}
+
+/* --- 리모컨 6·7번 --- */
+function dispatch(){
+  if(!OPS.on){ toast(OPS.loading ? '도로를 준비하는 중이에요' : '먼저 관제를 시작하세요 (8번: 훈련 시작)'); return; }
+  const m = OPS.mission;
+  if(m && map.getZoom() >= 15 && centerPx(m.car.pos) <= CAPTURE_PX){ captureSuspect(); return; }
+  const open = OPS.accidents.filter(a => !a.done).sort((x, y) => centerPx(x.ll) - centerPx(y.ll));
+  if(open[0] && map.getZoom() >= 13 && centerPx(open[0].ll) <= CAPTURE_PX){ resolveAccident(open[0]); return; }
+  if(m && centerPx(m.car.pos) <= CAPTURE_PX && map.getZoom() < 15){ toast('🔍 더 확대해야 검거할 수 있어요'); return; }
+  toast('🎯 화면 가운데 원 안에 사건이 없어요'); beep(220, 1);
+}
+function goAlert(){
+  let ll = null, label = '';
+  if(OPS.mission && OPS.mission.lastSight){ ll = OPS.mission.lastSight; label = '최근 목격 위치'; }
+  else {
+    const a = OPS.accidents.filter(a => !a.done).slice(-1)[0];
+    if(a){ ll = a.ll; label = `${a.zone.id}구역 ${a.type}`; }
+  }
+  if(!ll){ toast(OPS.on ? '지금은 처리할 상황이 없어요' : '관제를 먼저 시작하세요'); return; }
+  map.flyTo(ll, Math.max(map.getZoom(), 15), { duration:1 });
+  toast(`🚨 ${label}(으)로 이동`);
+}
+document.getElementById('btnOps').addEventListener('click', () => (OPS.on || OPS.loading) ? stopOps() : startOps());
+document.getElementById('btnMission').addEventListener('click', toggleMission);
+
+/* ===================== 구역 편집 ===================== */
+document.getElementById('btnSaveZone').addEventListener('click', () => {
+  const id = +document.getElementById('selZoneEdit').value;
+  const z = zones.find(z => z.id === id); const c = map.getCenter();
+  const name = prompt(`${id}구역 이름을 입력하세요`, z.name);
+  if(name === null) return;
+  z.lat = +c.lat.toFixed(5); z.lng = +c.lng.toFixed(5); z.name = name.trim() || z.name;
+  store.set('irmap_zones', zones); drawZones(); toast(`${id}구역 위치를 저장했어요`);
+  if(OPS.on){ stopOps(); startOps(); } // CCTV·차량을 새 위치로 다시 배치
+});
+document.getElementById('btnResetZones').addEventListener('click', () => {
+  zones = JSON.parse(JSON.stringify(DEFAULT_ZONES)); store.set('irmap_zones', zones); drawZones(); doAction('HOME');
+  if(OPS.on){ stopOps(); startOps(); }
+});
+
+/* ===================== 아두이노 코드 모달 ===================== */
+const code = document.getElementById('arduinoCode').textContent.trim();
+document.getElementById('codeView').textContent = code;
+const modal = document.getElementById('modal');
+document.getElementById('btnCode').addEventListener('click', () => modal.classList.add('show'));
+document.getElementById('btnClose').addEventListener('click', () => modal.classList.remove('show'));
+modal.addEventListener('click', e => { if(e.target === modal) modal.classList.remove('show'); });
+document.getElementById('btnCopy').addEventListener('click', async () => {
+  try{ await navigator.clipboard.writeText(code); toast('코드를 복사했어요'); }
+  catch(e){ const r = document.createRange(); r.selectNodeContents(document.getElementById('codeView')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); toast('Ctrl+C 로 복사하세요'); }
+});
+document.getElementById('btnDownload').addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([code], { type:'text/plain' }));
+  a.download = 'ir_map_orangeboard.ino'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+
+/* ===================== 공통 ===================== */
+function log(msg, cls=''){
+  const el = document.getElementById('log');
+  const t = new Date().toTimeString().slice(0,8);
+  const d = document.createElement('div'); d.className = cls; d.textContent = `[${t}] ${msg}`;
+  el.appendChild(d); while(el.children.length > 200) el.removeChild(el.firstChild);
+  el.scrollTop = el.scrollHeight;
+}
+let toastTimer;
+function toast(msg){
+  const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 1400);
+}
+
+drawZones();
+renderMapTable();
+setTimeout(() => doAction('HOME'), 300);
+log('웹앱 시작 · [오렌지보드 연결]을 눌러 주세요');
+</script>
+</body>
+</html>
